@@ -6,7 +6,9 @@
     "dev": "next dev --turbopack",
     "build": "next build --turbopack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "bun test",
+    "spotify:exchange": "bun scripts/spotify-exchange.ts"
   },
   "dependencies": {
     "react": "19.1.0",
