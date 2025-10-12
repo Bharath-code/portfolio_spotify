@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 
 import { consumeToken } from "@/lib/rate-limit";
-import { playTrack } from "@/lib/spotify";
+import {
+  SpotifyNetworkError,
+  SpotifyPremiumRequiredError,
+  playTrack,
+} from "@/lib/spotify";
 
 const LIMIT = 5;
 const WINDOW_MS = 60_000;
@@ -15,6 +19,24 @@ function getKey(request: Request) {
 type Body = {
   uri?: unknown;
 };
+
+function methodNotAllowedResponse() {
+  return NextResponse.json(
+    {
+      error: "Use POST with a JSON payload of the shape { uri: 'spotify:track:<TRACK_ID>' } to trigger playback.",
+    },
+    {
+      status: 405,
+      headers: {
+        Allow: "POST",
+      },
+    },
+  );
+}
+
+export function GET() {
+  return methodNotAllowedResponse();
+}
 
 export async function POST(request: Request) {
   if (!consumeToken(`play:${getKey(request)}`, LIMIT, WINDOW_MS)) {
@@ -40,6 +62,14 @@ export async function POST(request: Request) {
     await playTrack(uri);
     return NextResponse.json({ status: "playing", uri });
   } catch (error) {
+    if (error instanceof SpotifyPremiumRequiredError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+
+    if (error instanceof SpotifyNetworkError) {
+      return NextResponse.json({ error: error.message }, { status: 502 });
+    }
+
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 },

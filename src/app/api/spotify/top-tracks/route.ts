@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { getTopTracks } from "@/lib/spotify";
+import {
+  SpotifyNetworkError,
+  SpotifyPremiumRequiredError,
+  getTopTracks,
+} from "@/lib/spotify";
 
 export const revalidate = 3600;
 export const runtime = "nodejs";
@@ -15,6 +19,14 @@ export async function GET() {
     );
     return response;
   } catch (error) {
+    if (error instanceof SpotifyPremiumRequiredError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+
+    if (error instanceof SpotifyNetworkError) {
+      return NextResponse.json({ error: error.message }, { status: 502 });
+    }
+
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 },

@@ -55,6 +55,26 @@ type AccessTokenCache = {
 
 let tokenCache: AccessTokenCache | null = null;
 
+export class SpotifyPremiumRequiredError extends Error {
+  readonly status = 403;
+
+  constructor(message = "Spotify playback features require a Spotify Premium subscription.") {
+    super(message);
+    this.name = "SpotifyPremiumRequiredError";
+  }
+}
+
+export class SpotifyNetworkError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SpotifyNetworkError";
+  }
+}
+
+function isPremiumRequiredError(status: number) {
+  return status === 403;
+}
+
 function encodeBasicAuth(clientId: string, clientSecret: string) {
   const raw = `${clientId}:${clientSecret}`;
   if (typeof Buffer !== "undefined") {
@@ -103,18 +123,32 @@ async function getAccessToken(): Promise<string> {
 
 async function spotifyFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const accessToken = await getAccessToken();
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-    cache: "no-store",
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        ...(init?.headers ?? {}),
+      },
+      cache: "no-store",
+    });
+  } catch (error) {
+    const cause = (error as { cause?: unknown })?.cause;
+    const causeMessage = cause instanceof Error ? cause.message : undefined;
+    const hint = causeMessage ? ` (${causeMessage})` : "";
+    throw new SpotifyNetworkError(`Spotify network request failed for ${path}: ${(error as Error)?.message ?? String(error)}${hint}`);
+  }
 
   if (!response.ok) {
     const message = await response.text();
+
+    if (isPremiumRequiredError(response.status)) {
+      throw new SpotifyPremiumRequiredError();
+    }
+
     throw new Error(`Spotify request failed ${response.status}: ${message}`);
   }
 
@@ -147,12 +181,21 @@ export async function getTopTracks() {
 }
 
 export async function getNowPlaying(): Promise<NowPlaying> {
-  const response = await fetch(`${API_BASE}/me/player/currently-playing`, {
-    headers: {
-      Authorization: `Bearer ${await getAccessToken()}`,
-    },
-    cache: "no-store",
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(`${API_BASE}/me/player/currently-playing`, {
+      headers: {
+        Authorization: `Bearer ${await getAccessToken()}`,
+      },
+      cache: "no-store",
+    });
+  } catch (error) {
+    const cause = (error as { cause?: unknown })?.cause;
+    const causeMessage = cause instanceof Error ? cause.message : undefined;
+    const hint = causeMessage ? ` (${causeMessage})` : "";
+    throw new SpotifyNetworkError(`Spotify network request failed for /me/player/currently-playing: ${(error as Error)?.message ?? String(error)}${hint}`);
+  }
 
   if (response.status === 204 || response.status === 202) {
     return { isPlaying: false };
@@ -160,6 +203,11 @@ export async function getNowPlaying(): Promise<NowPlaying> {
 
   if (!response.ok) {
     const message = await response.text();
+
+    if (isPremiumRequiredError(response.status)) {
+      throw new SpotifyPremiumRequiredError();
+    }
+
     throw new Error(`Spotify request failed ${response.status}: ${message}`);
   }
 
