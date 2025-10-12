@@ -137,7 +137,7 @@ async function fetchSpotifyPayload() {
     payload.error = errors;
   }
 
-  return payload as const;
+  return payload;
 }
 
 export default async function SpotifyPage() {
