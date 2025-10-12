@@ -20,6 +20,28 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Spotify API Endpoints
+
+Use the following endpoints to test Spotify integration (requires valid Spotify credentials and Premium for playback controls):
+
+- `GET /api/spotify/top-tracks` – returns the authenticated user's top 10 tracks.
+- `GET /api/spotify/now-playing` – returns the current playback state.
+- `POST /api/spotify/play` – starts playback for a specific track. Provide a JSON body like:
+
+  ```bash
+  curl -X POST http://localhost:3000/api/spotify/play \
+    -H "Content-Type: application/json" \
+    -d '{"uri":"spotify:track:<TRACK_ID>"}'
+  ```
+
+- `POST /api/spotify/pause` – pauses the current playback session:
+
+  ```bash
+  curl -X POST http://localhost:3000/api/spotify/pause
+  ```
+
+If playback commands return a 403 error, ensure the Spotify account has an active Premium subscription.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
