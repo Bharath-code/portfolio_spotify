@@ -71,6 +71,12 @@
       "name": "Portfolio & Blog",
       "desc": "Personal portfolio built to showcase projects and write technical posts about modern JS tooling.",
       "tech": "SvelteKit • Vercel • Markdown"
+    },
+    {
+      "name": "Spotify Integration (UI + JSON)",
+      "desc": "Next.js 15 app that shows followed artists, top 10 tracks, and current playback as a pretty-printed JSON payload alongside a minimal UI with pause/play controls. Typed payloads and client/server component separation.",
+      "tech": "Next.js • TypeScript • TailwindCSS • Spotify Web API",
+      "url": "/spotify"
     }
   ],
   "leadership": [

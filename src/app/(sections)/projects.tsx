@@ -38,6 +38,16 @@ export function Projects() {
                 </li>
               ))}
             </ul>
+            {project.url ? (
+              <div className="mt-auto flex items-center justify-end">
+                <a
+                  href={project.url}
+                  className="inline-flex items-center gap-2 rounded-md border border-sky-500/30 px-3 py-1.5 text-xs font-medium text-sky-100 transition-colors hover:bg-sky-500/10"
+                >
+                  View
+                </a>
+              </div>
+            ) : null}
           </article>
         ))}
       </div>

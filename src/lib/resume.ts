@@ -22,6 +22,7 @@ type ProjectItem = {
   name: string;
   desc: string;
   tech: string;
+  url?: string;
 };
 
 type EducationItem = {
