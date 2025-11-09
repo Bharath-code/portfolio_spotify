@@ -245,3 +245,41 @@ export async function playTrack(uri: string) {
 export function clearSpotifyTokenCache() {
   tokenCache = null;
 }
+
+export type SimplifiedArtist = {
+  id: string;
+  name: string;
+  url: string;
+  artwork: SpotifyImage | null;
+  followers?: number;
+  genres?: string[];
+};
+
+// Raw Spotify artist type
+type SpotifyArtist = {
+  id: string;
+  name: string;
+  external_urls: { spotify: string };
+  images: SpotifyImage[];
+  followers?: { total: number };
+  genres?: string[];
+};
+
+function transformArtist(artist: SpotifyArtist): SimplifiedArtist {
+  const artwork = artist.images.at(0) ?? null;
+  return {
+    id: artist.id,
+    name: artist.name,
+    url: artist.external_urls.spotify,
+    artwork,
+    followers: artist.followers?.total,
+    genres: artist.genres ?? [],
+  };
+}
+
+export async function getFollowedArtists() {
+  const data = await spotifyFetch<{ artists: { items: SpotifyArtist[] } }>(
+    "/me/following?type=artist&limit=50",
+  );
+  return data.artists.items.map(transformArtist);
+}

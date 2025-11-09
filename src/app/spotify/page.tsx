@@ -1,190 +1,218 @@
 import { Metadata } from "next";
-
 import {
   SpotifyPremiumRequiredError,
   SpotifyNetworkError,
   getNowPlaying,
   getTopTracks,
+  getFollowedArtists,
 } from "@/lib/spotify";
-
-export const dynamic = "force-dynamic";
+import type { SimplifiedTrack, SimplifiedArtist, NowPlaying } from "@/lib/spotify";
+import ControlsUIClient from "./ControlsUIClient";
 
 export const metadata: Metadata = {
-  title: "Spotify API • Bharath",
-  description: "Top tracks and playback status sourced live from the Spotify Web API.",
+  title: "Spotify Controls",
+  description:
+    "Followed artists, top tracks, current playback state, and controls for pause/play.",
 };
 
-async function fetchSpotifyPayload() {
-  const endpoints = {
-    topTracks: { method: "GET", path: "/api/spotify/top-tracks" },
-    nowPlaying: { method: "GET", path: "/api/spotify/now-playing" },
-    pause: { method: "POST", path: "/api/spotify/pause" },
-    play: {
-      method: "POST",
-      path: "/api/spotify/play",
-      body: { uri: "spotify:track:<TRACK_ID>" },
-    },
-  } as const;
+async function buildPayload() {
+  try {
+    const [tracks, nowPlaying, artists] = await Promise.all([
+      getTopTracks(),
+      getNowPlaying(),
+      getFollowedArtists(),
+    ]);
 
-  const metadata = {
-    generatedAt: new Date().toISOString(),
-  } as const;
+    const topTracks = (tracks as SimplifiedTrack[]).map((t) => ({
+      id: t.id,
+      title: t.title,
+      artists: t.artists,
+      uri: t.uri,
+      url: t.url,
+    }));
 
-  const payload: {
-    description: string;
-    endpoints: typeof endpoints;
-    metadata: typeof metadata;
-    nowPlaying?: Awaited<ReturnType<typeof getNowPlaying>>;
-    topTracks?: Awaited<ReturnType<typeof getTopTracks>>;
-    actions?: {
-      stopPlayback: {
-        description: string;
-        request: typeof endpoints.pause;
-      };
-      playTopTracks?: Array<{
-        rank: number;
-        title: string;
-        artists: string[];
-        request: {
-          method: typeof endpoints.play.method;
-          path: typeof endpoints.play.path;
-          body: { uri: string };
-        };
-        uri: string;
-        url: string;
-      }>;
-    };
-    error?: string | string[];
-    premiumRequired?: boolean;
-    networkIssue?: boolean;
-  } = {
-    description: "Server-rendered view of Spotify data exposed via this portfolio's API routes.",
-    endpoints,
-    metadata,
-  };
+    const followedArtists = (artists as SimplifiedArtist[]).map((a) => ({
+      id: a.id,
+      name: a.name,
+      url: a.url,
+      artwork: a.artwork,
+    }));
 
-  const [tracksResult, nowPlayingResult] = await Promise.allSettled([
-    getTopTracks(),
-    getNowPlaying(),
-  ]);
+    const np = nowPlaying as NowPlaying;
+    const nowPlayingOut = np.isPlaying
+      ? {
+          id: np.track.id,
+          title: np.track.title,
+          artists: np.track.artists,
+          isPlaying: true,
+          progressMs: np.progressMs,
+          uri: np.track.uri,
+        }
+      : null;
 
-  const errors: string[] = [];
-
-  if (tracksResult.status === "fulfilled") {
-    payload.topTracks = tracksResult.value;
-    payload.actions = {
-      stopPlayback: {
-        description: "POST to pause the current Spotify playback session.",
-        request: endpoints.pause,
+    return {
+      ok: true as const,
+      metadata: {
+        generatedAt: new Date().toISOString(),
+        description:
+          "Consolidated Spotify data for UI and pretty-printed JSON output",
       },
-      playTopTracks: tracksResult.value.map((track, index) => ({
-        rank: index + 1,
-        title: track.title,
-        artists: track.artists,
-        uri: track.uri,
-        url: track.url,
-        request: {
-          method: endpoints.play.method,
-          path: endpoints.play.path,
-          body: { uri: track.uri },
+      endpoints: {
+        nowPlaying: "/api/spotify/now-playing",
+        topTracks: "/api/spotify/top-tracks",
+        play: "/api/spotify/play",
+        pause: "/api/spotify/pause",
+        followedArtists: "/api/spotify/followed-artists",
+      },
+      actions: {
+        pausePlayback: { method: "POST", endpoint: "/api/spotify/pause" },
+        playTrack: {
+          method: "POST",
+          endpoint: "/api/spotify/play",
+          body: { uri: "spotify:track:<TRACK_ID_OR_URI>" },
         },
-      })),
-    };
-  } else {
-    const reason = tracksResult.reason;
-    errors.push(
-      reason instanceof Error
-        ? reason.message
-        : "Failed to load Spotify top tracks. Check environment configuration.",
-    );
-
-    if (reason instanceof SpotifyNetworkError) {
-      payload.networkIssue = true;
-    }
-
-    payload.actions = {
-      stopPlayback: {
-        description: "POST to pause the current Spotify playback session.",
-        request: endpoints.pause,
       },
+      followedArtists,
+      topTracks,
+      nowPlaying: nowPlayingOut,
+      error: null,
+      premiumRequired: false,
+      networkIssue: false,
+    };
+  } catch (err: unknown) {
+    if (err instanceof SpotifyPremiumRequiredError) {
+      return {
+        ok: false as const,
+        metadata: {
+          generatedAt: new Date().toISOString(),
+          description:
+            "Premium is required to control playback. Viewing data still works.",
+        },
+        endpoints: {
+          nowPlaying: "/api/spotify/now-playing",
+          topTracks: "/api/spotify/top-tracks",
+          play: "/api/spotify/play",
+          pause: "/api/spotify/pause",
+          followedArtists: "/api/spotify/followed-artists",
+        },
+        actions: {
+          pausePlayback: { method: "POST", endpoint: "/api/spotify/pause" },
+          playTrack: {
+            method: "POST",
+            endpoint: "/api/spotify/play",
+            body: { uri: "spotify:track:<TRACK_ID_OR_URI>" },
+          },
+        },
+        followedArtists: [],
+        topTracks: [],
+        nowPlaying: null,
+        error: "Spotify Premium is required to use playback controls.",
+        premiumRequired: true,
+        networkIssue: false,
+      };
+    }
+
+    if (err instanceof SpotifyNetworkError) {
+      return {
+        ok: false as const,
+        metadata: {
+          generatedAt: new Date().toISOString(),
+          description: "Network error while fetching Spotify data.",
+        },
+        endpoints: {
+          nowPlaying: "/api/spotify/now-playing",
+          topTracks: "/api/spotify/top-tracks",
+          play: "/api/spotify/play",
+          pause: "/api/spotify/pause",
+          followedArtists: "/api/spotify/followed-artists",
+        },
+        actions: {
+          pausePlayback: { method: "POST", endpoint: "/api/spotify/pause" },
+          playTrack: {
+            method: "POST",
+            endpoint: "/api/spotify/play",
+            body: { uri: "spotify:track:<TRACK_ID_OR_URI>" },
+          },
+        },
+        followedArtists: [],
+        topTracks: [],
+        nowPlaying: null,
+        error: "Network error while communicating with Spotify API.",
+        premiumRequired: false,
+        networkIssue: true,
+      };
+    }
+
+    return {
+      ok: false as const,
+      metadata: {
+        generatedAt: new Date().toISOString(),
+        description: "Unexpected error while building Spotify payload.",
+      },
+      endpoints: {
+        nowPlaying: "/api/spotify/now-playing",
+        topTracks: "/api/spotify/top-tracks",
+        play: "/api/spotify/play",
+        pause: "/api/spotify/pause",
+        followedArtists: "/api/spotify/followed-artists",
+      },
+      actions: {
+        pausePlayback: { method: "POST", endpoint: "/api/spotify/pause" },
+        playTrack: {
+          method: "POST",
+          endpoint: "/api/spotify/play",
+          body: { uri: "spotify:track:<TRACK_ID_OR_URI>" },
+        },
+      },
+      followedArtists: [],
+      topTracks: [],
+      nowPlaying: null,
+      error: "Unknown error occurred",
+      premiumRequired: false,
+      networkIssue: false,
     };
   }
-
-  if (nowPlayingResult.status === "fulfilled") {
-    payload.nowPlaying = nowPlayingResult.value;
-  } else {
-    const reason = nowPlayingResult.reason;
-
-    if (reason instanceof SpotifyNetworkError) {
-      payload.networkIssue = true;
-    }
-
-    if (reason instanceof SpotifyPremiumRequiredError) {
-      payload.premiumRequired = true;
-      errors.push(reason.message);
-    } else {
-      errors.push(
-        reason instanceof Error
-          ? reason.message
-          : "Failed to load currently playing track. Check environment configuration.",
-      );
-    }
-  }
-
-  if (errors.length === 1) {
-    payload.error = errors[0];
-  } else if (errors.length > 1) {
-    payload.error = errors;
-  }
-
-  return payload;
 }
 
 export default async function SpotifyPage() {
-  const payload = await fetchSpotifyPayload();
+  const payload = await buildPayload();
 
-  const errorMessages = Array.isArray(payload.error)
-    ? payload.error
-    : payload.error
-      ? [payload.error]
-      : [];
+  // UI section (client component for interactivity)
+  const artistsUI = payload.followedArtists.map((a) => ({
+    id: a.id,
+    name: a.name,
+    url: a.url,
+    artwork: a.artwork ? { url: a.artwork.url } : null,
+  }));
+  const tracksUI = payload.topTracks.map((t) => ({
+    id: t.id,
+    title: t.title,
+    artists: t.artists,
+    uri: t.uri,
+    url: t.url,
+  }));
 
-  const notices: string[] = [];
-
-  if (payload.premiumRequired) {
-    notices.push(
-      "Spotify playback features require a Spotify Premium subscription. Playback controls are disabled for non-Premium accounts.",
-    );
-  }
-
-  if (errorMessages.length) {
-    const filteredErrors = payload.premiumRequired
-      ? errorMessages.filter((message) => !message.toLowerCase().includes("premium"))
-      : errorMessages;
-
-    notices.push(...filteredErrors);
-  }
+  // JSON payload pretty-print section
+  const pretty = JSON.stringify(payload, null, 2);
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-8 px-6 py-16 sm:px-10">
-      <header className="space-y-3">
-        <h1 className="text-3xl font-semibold text-white">Spotify API Surface</h1>
-        <p className="max-w-2xl text-sm text-slate-300/80">
-          These responses are live from Spotify. Pretty-printing is intentional so you can inspect the JSON or call the endpoints directly.
-        </p>
-      </header>
-      {notices.length > 0 && (
-        <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 p-5 text-sm text-amber-100">
-          <ul className="space-y-2">
-            {notices.map((message, index) => (
-              <li key={index}>{message}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-      <pre className="overflow-x-auto rounded-2xl border border-white/10 bg-slate-950/80 p-6 text-left text-sm leading-relaxed text-sky-100">
-        {JSON.stringify(payload, null, 2)}
-      </pre>
+    <main style={{ padding: 24 }}>
+      <h1 style={{ marginTop: 0 }}>Spotify Controls</h1>
+      <p style={{ marginTop: 4 }}>
+        This page provides both a minimal UI and a pretty-printed JSON payload of
+        Spotify data and actions.
+      </p>
+
+      {/* Client UI */}
+      <ControlsUIClient artists={artistsUI} tracks={tracksUI} nowPlaying={payload.nowPlaying} />
+
+      {/* JSON payload */}
+      <section>
+        <h2 style={{ margin: 0, marginBottom: 8 }}>JSON payload</h2>
+        <pre style={{ whiteSpace: "pre-wrap", background: "#0d0d0d", padding: 12, borderRadius: 8, overflowX: "auto" }}>
+          {pretty}
+        </pre>
+      </section>
     </main>
   );
 }

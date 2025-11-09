@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import {
   SpotifyNetworkError,
   SpotifyPremiumRequiredError,
-  getTopTracks,
+  getFollowedArtists,
 } from "@/lib/spotify";
 
 export const revalidate = 3600;
@@ -11,8 +11,8 @@ export const runtime = "nodejs";
 
 export async function GET() {
   try {
-    const tracks = await getTopTracks();
-    const response = NextResponse.json({ tracks });
+    const artists = await getFollowedArtists();
+    const response = NextResponse.json({ artists });
     response.headers.set(
       "Cache-Control",
       "public, s-maxage=3600, stale-while-revalidate=1200",
@@ -33,4 +33,3 @@ export async function GET() {
     );
   }
 }
-  
